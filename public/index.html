@@ -1,190 +1,212 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>オンラインPong</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <style>
-    body {
-      margin: 0;
-      background: black;
-      color: white;
-      text-align: center;
-      font-family: sans-serif;
-      touch-action: none;
-    }
-    canvas {
-      display: block;
-      margin: auto;
-      background: #222;
-      touch-action: none;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>オンラインPong</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+  body {
+    margin: 0;
+    background: black;
+    color: white;
+    text-align: center;
+    font-family: sans-serif;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    background: #222;
+    touch-action: none;
+  }
+</style>
 </head>
 <body>
-  <h1 style="margin:10px 0;">オンラインPong</h1>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
-  <p id="status"></p>
+<h1 style="margin:10px 0;">オンラインPong</h1>
+<canvas id="gameCanvas"></canvas>
+<p id="status"></p>
 
-  <!-- 効果音 -->
-  <audio id="hitSound" src="SE/pon.mp3" preload="auto"></audio>
-  <audio id="scoreUpSound" src="SE/kasha.mp3" preload="auto"></audio>
-  <audio id="scoreDownSound" src="SE/bb.mp3" preload="auto"></audio>
+<!-- 効果音 -->
+<audio id="hitSound" src="SE/pon.mp3" preload="auto"></audio>
+<audio id="scoreUpSound" src="SE/kasha.mp3" preload="auto"></audio>
+<audio id="scoreDownSound" src="SE/bb.mp3" preload="auto"></audio>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
 
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    const hitSound = document.getElementById("hitSound");
-    const scoreUpSound = document.getElementById("scoreUpSound");
-    const scoreDownSound = document.getElementById("scoreDownSound");
+// 固定ゲーム座標
+const GAME_WIDTH = 800;
+const GAME_HEIGHT = 600;
 
-    let players = {};
-    let ball = null;
-    let myId = null;
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const hitSound = document.getElementById("hitSound");
+const scoreUpSound = document.getElementById("scoreUpSound");
+const scoreDownSound = document.getElementById("scoreDownSound");
 
-    let lastBallX = null;
-    let lastBallY = null;
-    let lastScores = {};
+let players = {};
+let ball = null;
+let myId = null;
 
-    socket.on("connect", () => {
-      myId = socket.id;
-    });
+let lastBallX = null;
+let lastBallY = null;
+let lastScores = {};
 
-    // -------------------------
-    // サーバからゲーム状態受信
-    // -------------------------
-    socket.on("state", (data) => {
-      players = data.players;
-      ball = data.ball;
+// -------------------------
+// Canvas を画面サイズに合わせる
+// -------------------------
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
-      // 効果音判定：パドル/壁ヒット
-      if (ball && lastBallX !== null && lastBallY !== null) {
-        let hit = false;
+// -------------------------
+// 接続
+// -------------------------
+socket.on("connect", () => {
+  myId = socket.id;
+});
 
-        // 上下壁衝突
-        if ((lastBallY < 0 && ball.y >= 0) || (lastBallY > 600 && ball.y <= 600)) {
+socket.on("full", () => {
+  document.getElementById("status").innerText = "満員です！";
+});
+
+// -------------------------
+// サーバからゲーム状態受信
+// -------------------------
+socket.on("state", (data) => {
+  players = data.players;
+  ball = data.ball;
+
+  // 効果音判定：パドル/壁ヒット
+  if (ball && lastBallX !== null && lastBallY !== null) {
+    let hit = false;
+
+    // 上下壁
+    if ((lastBallY < 0 && ball.y >= 0) || (lastBallY > GAME_HEIGHT && ball.y <= GAME_HEIGHT)) {
+      hit = true;
+    }
+
+    // パドル
+    for (let id in players) {
+      let p = players[id];
+      if (
+        ball.x >= p.x - p.width/2 && ball.x <= p.x + p.width/2 &&
+        ball.y >= p.y - p.height/2 && ball.y <= p.y + p.height/2
+      ) {
+        if (
+          lastBallX < p.x - p.width/2 || lastBallX > p.x + p.width/2 ||
+          lastBallY < p.y - p.height/2 || lastBallY > p.y + p.height/2
+        ) {
           hit = true;
-        }
-
-        // パドル衝突
-        for (let id in players) {
-          let p = players[id];
-          if (
-            ball.x >= p.x - p.width/2 && ball.x <= p.x + p.width/2 &&
-            ball.y >= p.y - p.height/2 && ball.y <= p.y + p.height/2
-          ) {
-            if (
-              lastBallX < p.x - p.width/2 || lastBallX > p.x + p.width/2 ||
-              lastBallY < p.y - p.height/2 || lastBallY > p.y + p.height/2
-            ) {
-              hit = true;
-              break;
-            }
-          }
-        }
-
-        if (hit) {
-          hitSound.currentTime = 0;
-          hitSound.play().catch(e => console.log("Audio play error", e));
+          break;
         }
       }
-
-      // 効果音判定：得点
-      for (let id in players) {
-        if (lastScores[id] !== undefined) {
-          if (players[id].score > lastScores[id]) {
-            if (id === myId) {
-              // 自分が得点した
-              scoreUpSound.currentTime = 0;
-              scoreUpSound.play().catch(e => console.log("Audio play error", e));
-            } else {
-              // 相手が得点した
-              scoreDownSound.currentTime = 0;
-              scoreDownSound.play().catch(e => console.log("Audio play error", e));
-            }
-          }
-        }
-        lastScores[id] = players[id].score;
-      }
-
-      lastBallX = ball.x;
-      lastBallY = ball.y;
-    });
-
-    socket.on("full", () => {
-      document.getElementById("status").innerText = "満員です！";
-    });
-
-    // -------------------------
-    // マウス・タッチ対応
-    // -------------------------
-    function handleMove(y) {
-      socket.emit("move", y);
     }
 
-    canvas.addEventListener("mousemove", (e) => {
-      const rect = canvas.getBoundingClientRect();
-      handleMove(e.clientY - rect.top);
-    });
-
-    canvas.addEventListener("touchmove", (e) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      if (e.touches.length > 0) {
-        handleMove(e.touches[0].clientY - rect.top);
-      }
-    }, { passive: false });
-
-    // -------------------------
-    // 描画ループ
-    // -------------------------
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 背景
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // ステージ枠
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-
-      // プレイヤー
-      ctx.fillStyle = "white";
-      for (let id in players) {
-        let p = players[id];
-        ctx.fillRect(
-          p.x - p.width / 2,
-          p.y - p.height / 2,
-          p.width,
-          p.height
-        );
-      }
-
-      // ボール
-      if (ball) {
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // スコア表示
-      ctx.font = "24px sans-serif";
-      ctx.fillText("スコア", 370, 30);
-      let i = 0;
-      for (let id in players) {
-        ctx.fillText(`P${i+1}: ${players[id].score}`, 350, 60 + i * 30);
-        i++;
-      }
-
-      requestAnimationFrame(draw);
+    if (hit) {
+      hitSound.currentTime = 0;
+      hitSound.play().catch(e=>console.log("Audio play error", e));
     }
+  }
 
-    draw();
-  </script>
+  // 効果音判定：得点
+  for (let id in players) {
+    if (lastScores[id] !== undefined) {
+      if (players[id].score > lastScores[id]) {
+        if (id === myId) {
+          scoreUpSound.currentTime = 0;
+          scoreUpSound.play().catch(e=>console.log("Audio play error", e));
+        } else {
+          scoreDownSound.currentTime = 0;
+          scoreDownSound.play().catch(e=>console.log("Audio play error", e));
+        }
+      }
+    }
+    lastScores[id] = players[id].score;
+  }
+
+  lastBallX = ball.x;
+  lastBallY = ball.y;
+});
+
+// -------------------------
+// マウス・タッチ操作
+// -------------------------
+function handleMove(y) {
+  const scaleY = GAME_HEIGHT / canvas.height;
+  socket.emit("move", y * scaleY);
+}
+
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  handleMove(e.clientY - rect.top);
+});
+
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches.length > 0) {
+    handleMove(e.touches[0].clientY - rect.top);
+  }
+}, { passive: false });
+
+// -------------------------
+// 描画ループ
+// -------------------------
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const scaleX = canvas.width / GAME_WIDTH;
+  const scaleY = canvas.height / GAME_HEIGHT;
+  ctx.save();
+  ctx.scale(scaleX, scaleY);
+
+  // 背景
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
+
+  // ステージ枠
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2,2,GAME_WIDTH-4,GAME_HEIGHT-4);
+
+  // プレイヤー
+  ctx.fillStyle = "white";
+  for (let id in players) {
+    let p = players[id];
+    ctx.fillRect(
+      p.x - p.width/2,
+      p.y - p.height/2,
+      p.width,
+      p.height
+    );
+  }
+
+  // ボール
+  if (ball) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, 10, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // スコア
+  ctx.font = "24px sans-serif";
+  ctx.fillText("スコア", 370, 30);
+  let i = 0;
+  for (let id in players) {
+    ctx.fillText(`P${i+1}: ${players[id].score}`, 350, 60 + i*30);
+    i++;
+  }
+
+  ctx.restore();
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
 </body>
 </html>
