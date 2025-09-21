@@ -33,7 +33,7 @@ io.on("connection", (socket) => {
     x: isLeft ? 50 : 750,
     y: 300,
     width: 20,
-    height: 100,
+    height: 1000,
     score: 0,
   };
 
