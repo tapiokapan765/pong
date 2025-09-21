@@ -13,11 +13,16 @@
     font-family: sans-serif;
     touch-action: none;
   }
+
   canvas {
     display: block;
-    margin: auto;
-    background: #222;
+    margin: 20px auto;      /* 上下余白を確保 */
+    max-width: 80vw;        /* 横幅は画面の80% */
+    max-height: 80vh;       /* 高さは画面の80% */
+    width: auto;             /* 自動調整 */
+    height: auto;            /* 自動調整 */
     touch-action: none;
+    background: #222;
   }
 </style>
 </head>
@@ -137,8 +142,16 @@ socket.on("state", (data) => {
 // マウス・タッチ操作
 // -------------------------
 function handleMove(y) {
-  const scaleY = GAME_HEIGHT / canvas.height;
-  socket.emit("move", y * scaleY);
+  // canvas 内の座標をゲーム座標に変換
+  const scaleY = GAME_HEIGHT / canvas.clientHeight;
+  let gameY = y * scaleY;
+
+  // パドルが画面端を超えないように制限
+  const paddleHeight = 100; // 例: パドルの高さ
+  if (gameY < paddleHeight / 2) gameY = paddleHeight / 2;
+  if (gameY > GAME_HEIGHT - paddleHeight / 2) gameY = GAME_HEIGHT - paddleHeight / 2;
+
+  socket.emit("move", gameY);
 }
 
 canvas.addEventListener("mousemove", (e) => {
